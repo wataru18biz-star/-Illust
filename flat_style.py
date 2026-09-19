@@ -1,7 +1,7 @@
 import cv2
 import numpy as np
 from poster_pipeline import get_masks, quantize_palette, apply_palette, make_paper_texture
-from landmark_face import draw_landmark_face, face_cascade
+from landmark_face import draw_landmark_face, draw_landmark_face_profile, detect_faces
 
 
 def merge_small_fragments(quant, keep_mask, min_area=250):
@@ -104,11 +104,13 @@ def generate_illustration_content(path, mode="objects", k=7):
     ink_color = (30, 30, 30)
 
     gray_full = cv2.cvtColor(img_s, cv2.COLOR_BGR2GRAY)
-    faces = face_cascade.detectMultiScale(gray_full, minNeighbors=3, minSize=(30, 30))
-    for (fx, fy, fw, fh) in faces:
-        if keep_mask[fy:fy + fh, fx:fx + fw].mean() < 0.5:
-            continue
-        draw_landmark_face(content, img_s, fx, fy, fw, fh, ink_color)
+    # 正面顔が見つからない場合は横顔(haarcascade_profileface)をフォールバックで試す
+    faces = detect_faces(gray_full, keep_mask, frontal_min_neighbors=3, frontal_min_size=(30, 30))
+    for (fx, fy, fw, fh, facing) in faces:
+        if facing == 'front':
+            draw_landmark_face(content, img_s, fx, fy, fw, fh, ink_color)
+        else:
+            draw_landmark_face_profile(content, img_s, fx, fy, fw, fh, ink_color, facing=facing)
 
     content = draw_flat_outlines(content, keep_mask_for_draw, quant, ink_color, thickness=1, epsilon=2.5)
 

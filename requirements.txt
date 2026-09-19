@@ -1,0 +1,10 @@
+# opencv-python-headless 5.0系は cv2/data/ にHaar cascadeのXMLファイルが
+# 同梱されておらず、CascadeClassifierが「読み込めているが検出は常に0件」という
+# 気づきにくい壊れ方をする（landmark_face.py, flat_style.pyの顔検出が全滅する）。
+# 4.10.0.84はhaarcascade_frontalface_default.xml / haarcascade_profileface.xml等を
+# 含むことを確認済みなので固定する。
+opencv-python-headless==4.10.0.84
+numpy>=2.0
+rembg>=2.0.84
+onnxruntime>=1.30.0
+pillow>=12.0
