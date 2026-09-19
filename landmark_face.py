@@ -223,6 +223,46 @@ def detect_faces(gray_full, keep_mask, frontal_min_neighbors=3, frontal_min_size
     return results
 
 
+def recover_missed_people(img_s, subject_mask, keep_mask, coverage_threshold=0.4):
+    """rembgは「画面内で最も顕著な塊は1つ」という前提で動いているため、複数人が
+    写る写真で一部の人物を丸ごと無視することがある（例：2人のうち1人だけ拾う、
+    集合写真でほとんどの人物が背景扱いになる）。keep_maskとほとんど重ならない
+    場所に本物らしい顔が見つかった場合、その顔を中心にした楕円形の「人物がいる
+    はずの範囲」を強制的にkeep_mask/subject_maskへ追加して復元する。
+
+    実写真での検証で、目検出・肌色率・エッジ密度・左右対称性のいずれも、写真ごとの
+    明るさ・コントラストの違いに埋もれてしまい、誤検出（Tシャツの文字柄やグラフィック
+    の一部を顔と誤検出するケース）を安定して除外できないことを確認した
+    （CHANGELOG参照）。「本物の人物が消える」実害の方が大きいと判断し、多少の誤爆
+    リスクを受け入れてでも追加する側に倒す。誤爆時の被害を抑えるため、追加領域は
+    検出ボックスのサイズに比例した控えめな大きさに留める。
+    """
+    hs, ws = img_s.shape[:2]
+    gray = cv2.cvtColor(img_s, cv2.COLOR_BGR2GRAY)
+    all_mask = np.ones((hs, ws), np.uint8)
+    faces = detect_faces(gray, all_mask, frontal_min_neighbors=3, frontal_min_size=(30, 30))
+
+    new_subject = subject_mask.copy()
+    new_keep = keep_mask.copy()
+    recovered = []
+    for (fx, fy, fw, fh, facing) in faces:
+        if fw <= 0 or fh <= 0:
+            continue
+        coverage = keep_mask[fy:fy + fh, fx:fx + fw].mean()
+        if coverage >= coverage_threshold:
+            continue
+        cx = fx + fw // 2
+        cy = fy + int(fh * 0.5) + int(fh * 1.6)
+        axis_x = int(fw * 1.3)
+        axis_y = int(fh * 2.6)
+        patch = np.zeros((hs, ws), np.uint8)
+        cv2.ellipse(patch, (cx, min(hs - 1, cy)), (axis_x, axis_y), 0, 0, 360, 1, -1)
+        new_subject = np.maximum(new_subject, patch)
+        new_keep = np.maximum(new_keep, patch)
+        recovered.append((fx, fy, fw, fh, facing))
+    return new_subject, new_keep, recovered
+
+
 def build_with_face_landmarks(path, out_path, title_lines=("Good", "Days"), mode="objects", k=9):
     img = cv2.imread(path)
     h, w = img.shape[:2]
@@ -231,6 +271,9 @@ def build_with_face_landmarks(path, out_path, title_lines=("Good", "Days"), mode
     hs, ws = img_s.shape[:2]
 
     subject_mask, keep_mask = get_masks(img_s, top_n_objects=3, mode=mode)
+    subject_mask, keep_mask, recovered = recover_missed_people(img_s, subject_mask, keep_mask)
+    if recovered:
+        print("recovered missed people:", recovered)
     shifted = cv2.pyrMeanShiftFiltering(img_s, sp=16, sr=32, maxLevel=1)
     palette, names = quantize_palette(shifted, keep_mask, subject_mask=subject_mask, k=k, snap_to_tombow=True)
 

@@ -1,7 +1,7 @@
 import cv2
 import numpy as np
 from poster_pipeline import get_masks, quantize_palette, apply_palette, make_paper_texture
-from landmark_face import draw_landmark_face, draw_landmark_face_profile, detect_faces
+from landmark_face import draw_landmark_face, draw_landmark_face_profile, detect_faces, recover_missed_people
 
 
 def merge_small_fragments(quant, keep_mask, min_area=250):
@@ -73,6 +73,9 @@ def generate_illustration_content(path, mode="objects", k=7):
     hs, ws = img_s.shape[:2]
 
     subject_mask, keep_mask = get_masks(img_s, top_n_objects=3, mode=mode)
+    subject_mask, keep_mask, recovered = recover_missed_people(img_s, subject_mask, keep_mask)
+    if recovered:
+        print("recovered missed people:", recovered)
     img_s_flat = flatten_busy_patterns(img_s, keep_mask)
     shifted = cv2.pyrMeanShiftFiltering(img_s_flat, sp=28, sr=55, maxLevel=2)
     palette, names = quantize_palette(shifted, keep_mask, subject_mask=subject_mask, k=k, snap_to_tombow=True)
