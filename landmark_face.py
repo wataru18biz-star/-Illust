@@ -7,6 +7,11 @@ from poster_pipeline import (
 from tombow_palette import snap_palette_to_master, MASTER_BGR, MASTER_NAMES
 
 face_cascade = cv2.CascadeClassifier(cv2.data.haarcascades + 'haarcascade_frontalface_default.xml')
+# defaultカスケード単体だと耳（髪の影＋耳の凹凸がdefaultの特徴量にたまたま合致する）を
+# 顔と誤検出することがある。学習データの異なるalt2カスケードは耳では反応しないことを
+# 実写真で確認したため、「両方のカスケードが近い位置で反応した場合のみ採用」という
+# クロスバリデーションで誤検出を減らす（detect_faces内で使用）。
+face_cascade_alt2 = cv2.CascadeClassifier(cv2.data.haarcascades + 'haarcascade_frontalface_alt2.xml')
 eye_cascade = cv2.CascadeClassifier(cv2.data.haarcascades + 'haarcascade_eye.xml')
 profile_cascade = cv2.CascadeClassifier(cv2.data.haarcascades + 'haarcascade_profileface.xml')
 
@@ -187,8 +192,12 @@ def detect_faces(gray_full, keep_mask, frontal_min_neighbors=3, frontal_min_size
     results = []
 
     frontal = face_cascade.detectMultiScale(gray_full, minNeighbors=frontal_min_neighbors, minSize=frontal_min_size)
+    frontal_alt2 = face_cascade_alt2.detectMultiScale(gray_full, minNeighbors=3, minSize=frontal_min_size)
     for (fx, fy, fw, fh) in frontal:
         if keep_mask[fy:fy + fh, fx:fx + fw].mean() < 0.5:
+            continue
+        # alt2カスケードが近い位置で反応していない場合は耳等の誤検出とみなして捨てる
+        if not any(_box_overlap_ratio((fx, fy, fw, fh), (ax, ay, aw, ah)) > 0.3 for (ax, ay, aw, ah) in frontal_alt2):
             continue
         results.append((fx, fy, fw, fh, 'front'))
 
